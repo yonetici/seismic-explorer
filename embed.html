@@ -1,0 +1,217 @@
+<!-- Earthquake Explorer – Blogger Ready (Copy & Paste into HTML view) -->
+<!-- Fully tested on all Blogger templates – 2025 -->
+
+<div style="max-width:920px;margin:30px auto;padding:20px;background:#ffffff;border-radius:12px;box-shadow:0 6px 25px rgba(0,0,0,0.1);font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#333;">
+
+  <h1 style="text-align:center;color:#0#1a5276;margin-top:0;">Earthquake Explorer</h1>
+  <p style="text-align:center;font-size:1.1em;margin-bottom:30px;">
+    <strong>Draw any region on the map • Get instant earthquake statistics • Export CSV</strong>
+  </p>
+
+  <canvas id="eq-year-chart" height="130"></canvas>
+
+  <div id="eq-poly-map" style="height:460px;margin:30px 0;border-radius:10px;border:2px solid #e0e0e0;"></div>
+
+  <div style="background:#f8f9fa;padding:18px;border-radius:10px;">
+    <form id="eqstat-form">
+      <label style="margin-right:12px;">Start <input type="date" name="start" value="2000-01-01" required></label>
+      <label style="margin-right:12px;">End <input type="date" name="end" required></label>
+      <label style="margin-right:12px;">Min Mag <input type="number" step="0.1" name="minmag" value="5.0" style="width:80px;"></label>
+      <label style="margin-right:12px;">Max Mag <input type="number" step="0.1" name="maxmag" value="9.9" style="width:80px;"></label>
+      <button type="submit" style="background:#007bff;color:#fff;border:none;padding:10px 24px;border-radius:6px;font-weight:600;cursor:pointer;">Analyze Area</button>
+    </form>
+  </div>
+
+  <div id="eqstat-results" style="margin:25px 0;"></div>
+
+  <div style="text-align:right;margin:20px 0 25px;">
+    <button id="btn-download-csv" style="background:#28a745;color:#fff;border:none;padding:9px 18px;border-radius:6px;font-weight:600;cursor:pointer;">Download CSV</button>
+  </div>
+
+  <table id="eqstat-table" class="display" style="width:100%;"></table>
+
+  <div style="margin-top:50px;padding:20px 0;border-top:1px solid #eee;text-align:center;font-size:0.94em;color:#555;">
+    © 2025 <strong>Ridvan Bilgin</strong> – Disaster Management & GIS Expert<br><br>
+    <a href="https://www.ridvanbilgin.com" target="_blank">www.ridvanbilgin.com</a> • 
+    <a href="https://www.linkedin.com/in/ridvanbilgin" target="_blank">LinkedIn</a> • 
+    <a href="https://github.com/ridvanbilgin" target="_blank">GitHub</a>
+    <br><br>
+    Open source • <a href="https://github.com/ridvanbilgin/earthquake-explorer" target="_blank">MIT License</a> • 
+    Data: <a href="https://earthquake.usgs.gov" target="_blank">USGS</a>
+  </div>
+</div>
+
+<!-- CDN Libraries -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" />
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+<script>
+// === Earthquake Explorer – Full JavaScript (cleaned & optimized for Blogger) ===
+(() => {
+  let map, markersLayer, drawnItems, activePolygon = null;
+  let currentFeatures = [];
+  let chartInstance = null;
+  let dataTable = null;
+
+  // Set end date to today
+  document.querySelector('input[name="end"]').valueAsDate = new Date();
+
+  const updateChart = (features, context) => {
+    const years = {};
+    features.forEach(f => {
+      const y = new Date(f.properties.time).getUTCFullYear();
+      years[y] = (years[y] || 0) + 1;
+    });
+    const labels = Object.keys(years).sort();
+    const data = labels.map(y => years[y]);
+
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = new Chart(document.getElementById('eq-year-chart'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'Events', data, backgroundColor: 'rgba(52, 152, 219, 0.75)', borderColor: '#2980b9', borderWidth: 1 }] },
+      options: {
+        responsive: true,
+        plugins: { title: { display: true, text: `Earthquakes per Year ${context}`, font: { size: 16 } }},
+        scales: { y: { beginAtZero: true }}
+      }
+    });
+  };
+
+  const initMap = () => {
+    map = L.map('eq-poly-map').setView([20, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    markersLayer = L.featureGroup().addTo(map);
+    drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    const drawControl = new L.Control.Draw({
+      draw: { polygon: { allowIntersection: false, showArea: true }, marker: false, circle: false, rectangle: false, polyline: false, circlemarker: false },
+      edit: { featureGroup: drawnItems }
+    });
+    map.addControl(drawControl);
+
+    map.on(L.Draw.Event.CREATED, e => {
+      drawnItems.clearLayers();
+      activePolygon = e.layer;
+      drawnItems.addLayer(activePolygon);
+    });
+    map.on(L.Draw.Event.DELETED, () => activePolygon = null);
+  };
+
+  const pointInPoly = (lat, lng, poly) => {
+    if (!poly) return true;
+    const pts = poly.getLatLngs()[0];
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i].lat, yi = pts[i].lng;
+      const xj = pts[j].lat, yj = pts[j].lng;
+      const intersect = ((yi > lng) !== (yj > lng)) && (lat < (xj - xi) * (lng - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  const calcStats = feats => {
+    const bins = { '4-4.9':0, '5-5.9':0, '6-6.9':0, '7+':0 };
+    let sum = 0;
+    feats.forEach(f => {
+      const m = f.properties.mag || 0;
+      sum += m;
+      if (m >=7) bins['7+']++;
+      else if (m >=6) bins['6-6.9']++;
+      else if (m >=5) bins['5-5.9']++;
+      else bins['4-4.9']++;
+    });
+    return { total: feats.length, avg: feats.length ? (sum/feats.length).toFixed(2) : 0, bins };
+  };
+
+  const renderStats = s => {
+    document.getElementById('eqstat-results').innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:15px;margin:20px 0;">
+        <div style="flex:1;min-width:130px;text-align:center;background:#e3f2fd;padding:15px;border-radius:8px;"><b style="font-size:1.8em;">${s.total}</b><br>Total Events</div>
+        <div style="flex:1;min-width:130px;text-align:center;background:#fff3e0;padding:15px;border-radius:8px;"><b style="font-size:1.8em;">${s.avg}</b><br>Avg Magnitude</div>
+        <div style="flex:1;min-width:130px;text-align:center;background:#e8f5e8;padding:15px;border-radius:8px;"><b style="font-size:1.6em;">${s.bins['5-5.9']}</b><br>M 5.0–5.9</div>
+        <div style="flex:1;min-width:130px;text-align:center;background:#fff8e1;padding:15px;border-radius:8px;"><b style="font-size:1.6em;">${s.bins['6-6.9']}</b><br>M 6.0–6.9</div>
+        <div style="flex:1;min-width:130px;text-align:center;background:#ffebee;padding:15px;border-radius:8px;color:#c62828;"><b style="font-size:1.8em;">${s.bins['7+']}</b><br>M 7.0+</div>
+      </div>`;
+  };
+
+  const updateTableMap = feats => {
+    markersLayer.clearLayers();
+    const rows = feats.map(f => {
+      const p = f.properties, c = f.geometry.coordinates;
+      const color = p.mag >=7 ? '#c62828' : p.mag >=5 ? '#ef6c00' : '#2e7d32';
+      L.circleMarker([c[1], c[0]], { radius: Math.max(p.mag*1.8, 5), color, fillOpacity: 0.8 })
+       .bindPopup(`<b>${p.place}</b><br>Magnitude: ${p.mag}<br>${new Date(p.time).toLocaleDateString()}`)
+       .addTo(markersLayer);
+      return [p.mag, p.place, new Date(p.time).toLocaleDateString(), c[2]+' km', `<a href="${p.url}" target="_blank">Details</a>`];
+    });
+
+    if (feats.length) map.fitBounds(markersLayer.getBounds());
+
+    if (dataTable) dataTable.destroy();
+    dataTable = $('#eqstat-table').DataTable({
+      data: rows,
+      columns: [{title:"Mag"},{title:"Location"},{title:"Date"},{title:"Depth"},{title:"Link"}],
+      order: [[0,"desc"]],
+      pageLength: 15,
+      language: { search: "Search events:" }
+    });
+  };
+
+  // Form Submit
+  $('#eqstat-form').on('submit', function(e) {
+    e.preventDefault();
+    const btn = $(this).find('button').prop('disabled',true).text('Loading…');
+    const f = Object.fromEntries(new FormData(this));
+    const params = new URLSearchParams({
+      format:'geojson', starttime:f.start, endtime:f.end,
+      minmagnitude:f.minmag, maxmagnitude:f.maxmag, limit:20000, orderby:'time'
+    });
+    fetch(`https://earthquake.usgs.gov/fdsnws/event/1/query?${params}`)
+      .then(r => r.json())
+      .then(d => {
+        let feats = d.features || [];
+        if (activePolygon) {
+          feats = feats.filter(f => pointInPoly(f.geometry.coordinates[1], f.geometry.coordinates[0], activePolygon));
+        }
+        currentFeatures = feats;
+        const ctx = activePolygon ? '(Selected Area)' : '(Global)';
+        updateChart(feats, ctx);
+        renderStats(calcStats(feats));
+        updateTableMap(feats);
+      })
+      .finally(() => btn.prop('disabled',false).text('Analyze Area'));
+  });
+
+  // CSV Download
+  $('#btn-download-csv').on('click', () => {
+    if (!currentFeatures.length) return alert('Please run an analysis first!');
+    let csv = "Time,Magnitude,Place,Depth (km),Latitude,Longitude,URL\n";
+    currentFeatures.forEach(f => {
+      const p = f.properties, c = f.geometry.coordinates;
+      csv += `"${new Date(p.time).toISOString()}","${p.mag}","${(p.place||'').replace(/"/g,'""')}","${c[2]}","${c[1]}","${c[0]}","${p.url}"\n`;
+    });
+    const blob = new Blob([csv], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'earthquake-data.csv'; a.click();
+  });
+
+  // Initial load
+  fetch('https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=1990-01-01&minmagnitude=6&limit=15000')
+    .then(r => r.json())
+    .then(d => updateChart(d.features || [], '(Global M6+ 1990–today)'));
+
+  initMap();
+})();
+</script>
