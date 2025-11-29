@@ -16,7 +16,7 @@ Live Demo → [https://yonetici.github.io/seismic-explorer/](https://yonetici.gi
 - Trusted USGS real-time data
 
 ## How to Add to Your Blogger Blog (2 minutes)
-1. Open https://yourusername.github.io/earthquake-explorer/
+1. Open [https://yonetici.github.io/earthquake-explorer/](https://yonetici.github.io/seismic-explorer/)
 2. Press Ctrl+A → Ctrl+C (copy everything)
 3. In Blogger → Create new post → Switch to **HTML view**
 4. Paste (Ctrl+V) → Publish
@@ -45,7 +45,7 @@ This project is not affiliated with or endorsed by USGS.
 
 **Website:** [https://www.ridvanbilgin.com](https://www.ridvanbilgin.com)  
 **LinkedIn:** [linkedin.com/in/ridvanbilgin](https://www.linkedin.com/in/ridvanbilgin)  
-**GitHub:** [github.com/ridvanbilgin](https://github.com/yonetici)  
+**GitHub:** [github.com/yonetici](https://github.com/yonetici)  
 
 This project is licensed under the **MIT License** – see the [LICENSE](LICENSE) file for details.  
 You are free to use, fork, modify, and distribute this tool for personal or commercial purposes.
