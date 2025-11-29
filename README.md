@@ -4,9 +4,9 @@
 Real-time USGS data · Custom polygon filtering · Yearly charts · CSV export  
 Works directly inside **Blogger**, WordPress, GitHub Pages and any static website.
 
-Live Demo → https://yourusername.github.io/earthquake-explorer/
+Live Demo → [https://yonetici.github.io/seismic-explorer/](https://yonetici.github.io/seismic-explorer/)
 
-![Screenshot](assets/screenshot.png)
+![Screenshot](screenshot.png)
 
 ## Why This Tool is Unique
 - Draw any custom shape on the map (perfect for fault lines, countries, seas, exclusive economic zones)
